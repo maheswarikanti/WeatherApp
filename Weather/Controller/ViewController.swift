@@ -2,7 +2,7 @@
 //  ViewController.swift
 //  Weather
 //
-//  Created by Ashish Ashish on 10/28/21.
+//
 //
 
 import UIKit
@@ -31,12 +31,13 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return arr.count // You will replace this with arrCurrentWeather.count
+        return arrCurrentWeather.count // You will replace this with arrCurrentWeather.count
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
-        cell.textLabel?.text = arr[indexPath.row] // replace this with values from arrCurrentWeather array
+        cell.textLabel?.text = "\(arrCurrentWeather[indexPath.row].cityInfoName),  \(arrCurrentWeather[indexPath.row].temp)°C &  \(arrCurrentWeather[indexPath.row].weatherText)"
+        // replace this with values from arrCurrentWeather array
         return cell
     }
     
@@ -45,28 +46,21 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         
         print(Realm.Configuration.defaultConfiguration.fileURL!)
         
-        // Read all the values from realm DB and fill up the arrCityInfo
-        // for each city info het the city key and make a NW call to current weather condition
-        // wait for all the promises to be fulfilled
-        // Once all the promises are fulfilled fill the arrCurrentWeather array
-        // call for reload of tableView
-        
-//        do{
-//            let realm = try Realm()
-//            let cities = realm.objects(CityInfo.self)
-//            self.arrCityInfo.removeAll()
-//            getAllCurrentWeather(Array(cities)).done { currentWeather in
-//               self.tblView.reloadData()
-//            }
-//            .catch { error in
-//               print(error)
-//            }
-//       }catch{
-//           print("Error in reading Database \(error)")
-//       }
-        
-        
-        
+        do{
+            let realm = try Realm()
+            let cities = realm.objects(CityInfo.self)
+            self.arrCityInfo.removeAll()
+            self.arrCurrentWeather.removeAll()
+            getAllCurrentWeather(Array(cities)).done { currentWeather in
+                
+            self.tblView.reloadData()
+            }
+            .catch { error in
+               print(error)
+            }
+       }catch{
+           print("Error in reading Database \(error)")
+       }
     }
     
     func getAllCurrentWeather(_ cities: [CityInfo] ) -> Promise<[CurrentWeather]> {
@@ -74,7 +68,7 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
             var promises: [Promise< CurrentWeather>] = []
             
             for i in 0 ... cities.count - 1 {
-                promises.append( getCurrentWeather(cities[i].key) )
+                promises.append( getCurrentWeather(cities[i].key, cities[i].localizedName) )
             }
             
             return when(fulfilled: promises)
@@ -82,22 +76,30 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         }
     
     
-    func getCurrentWeather(_ cityKey : String) -> Promise<CurrentWeather>{
+    func getCurrentWeather(_ cityKey : String, _ cityName : String) -> Promise<CurrentWeather>{
             return Promise<CurrentWeather> { seal -> Void in
-                let url = "" // build URL for current weather here
+                let url = currentConditionURL + cityKey + "?apikey=" + apiKey // build URL for current weather here
                 
-                Alamofire.request(url).responseJSON { response in
+                AF.request(url).responseJSON { [self] response in
                     
                     if response.error != nil {
                         seal.reject(response.error!)
                     }
                     
+                    let weatherData = JSON( response.data!).array
+                    
+                    guard let weatherInfo = weatherData!.first else {seal.fulfill(JSON().rawValue as! CurrentWeather)
+                        return
+                    }
                   
                     let currentWeather = CurrentWeather()
                     
+                    currentWeather.cityInfoName = cityName
+                    currentWeather.weatherText = weatherInfo["WeatherText"].stringValue
+                    currentWeather.temp = ((weatherInfo["Temperature"])["Metric"])["Value"].intValue
+                    arrCurrentWeather.append(currentWeather)
                     
                     seal.fulfill(currentWeather)
-                    
                 }
             }
     }
